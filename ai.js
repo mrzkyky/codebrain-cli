@@ -3,12 +3,8 @@ import "dotenv/config";
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
-import { glob } from "glob";
-import { execSync } from "child_process";
-import chalk from "chalk";
-import ora from "ora";
-import boxen from "boxen";
 import readlineSync from "readline-sync";
+import { glob } from "glob";
 
 // ===== CONFIG =====
 const client = new OpenAI({
@@ -18,7 +14,7 @@ const client = new OpenAI({
 
 const MODEL = "poolside/laguna-m.1:free";
 
-// ===== AI CALL =====
+// ===== AI =====
 async function ask(prompt, role = "engineer") {
   try {
     const res = await client.chat.completions.create({
@@ -31,56 +27,13 @@ async function ask(prompt, role = "engineer") {
 
     return res.choices?.[0]?.message?.content || "";
   } catch (err) {
-    return "❌ AI Error: " + err.message;
+    console.log("❌ AI Error:", err.message);
+    return null;
   }
 }
 
-// ===== UI =====
-function banner() {
-  console.clear();
-  console.log(
-    boxen(
-      chalk.cyan.bold("🤖 AI DEV TERMINAL PRO\nClaudeCode Style"),
-      { padding: 1, borderStyle: "round" }
-    )
-  );
-}
-
-function printBox(title, content, color = "cyan") {
-  console.log(
-    boxen(
-      chalk[color](content),
-      {
-        title: chalk.bold(title),
-        borderStyle: "round",
-        padding: 1,
-      }
-    )
-  );
-}
-
-// ===== MARKDOWN RENDER =====
-function renderMarkdown(text) {
-  const lines = text.split("\n");
-  let inCode = false;
-
-  return lines.map(line => {
-    if (line.startsWith("```")) {
-      inCode = !inCode;
-      return chalk.gray("─".repeat(40));
-    }
-
-    if (inCode) return chalk.green(line);
-
-    if (line.startsWith("#")) return chalk.cyan.bold(line);
-    if (line.startsWith("-")) return chalk.yellow(line);
-
-    return line;
-  }).join("\n");
-}
-
 // ===== FILE =====
-const readFile = f => {
+const readFile = (f) => {
   try { return fs.readFileSync(f, "utf-8"); }
   catch { return null; }
 };
@@ -91,40 +44,12 @@ const writeFile = (f, c) => fs.writeFileSync(f, c, "utf-8");
 async function interpret(input) {
   const t = input.toLowerCase();
 
-  // internal commands only
-  if (
-    t.includes("scan project") ||
-    t.includes("scan folder") ||
-    t.startsWith("scan ") ||
-    t.startsWith("ai scan")
-  ) {
-    return "scan";
-  }
+  if (t.includes("scan project") || t.includes("scan folder")) return "scan";
+  if (t.includes("fix file")) return "fix";
+  if (t.includes("debug file")) return "debug";
+  if (t.includes("audit")) return "audit";
 
-  if (
-    t.includes("fix file") ||
-    t.startsWith("fix ") ||
-    t.startsWith("ai fix")
-  ) {
-    return "fix";
-  }
-
-  if (
-    t.includes("audit project") ||
-    t.includes("security audit")
-  ) {
-    return "audit";
-  }
-
-  if (
-    t.includes("debug file") ||
-    t.startsWith("debug ")
-  ) {
-    return "debug";
-  }
-
-  // everything else = normal AI chat
-  return "chat";
+  return "plan"; // default pakai planner
 }
 
 function extractPath(input) {
@@ -132,92 +57,166 @@ function extractPath(input) {
   return m ? m[0] : null;
 }
 
-// ===== MULTI AGENT =====
-async function multiAgent(input) {
-  const spinner = ora("🧠 Debugger analyzing...").start();
-  const debug = await ask(input, "debugger");
-  spinner.stop();
+// ===== 🧠 PLANNER =====
+async function makePlan(input) {
+  const res = await ask(`
+User request:
+"${input}"
 
-  printBox("🧠 Debugger", renderMarkdown(debug), "yellow");
+Create a step-by-step execution plan.
 
-  const spinner2 = ora("💻 Coder generating fix...").start();
-  const code = await ask(input + "\nProvide fixed code", "coder");
-  spinner2.stop();
+Rules:
+- max 5 steps
+- short
+- numbered list
+- no explanation
 
-  printBox("💻 Coder", renderMarkdown(code), "green");
+Example:
+1. Scan project
+2. Find errors
+3. Fix issues
+4. Review result
+`);
 
-  const spinner3 = ora("🔍 Reviewer checking...").start();
-  const review = await ask(code, "reviewer");
-  spinner3.stop();
+  return res;
+}
 
-  printBox("🔍 Reviewer", renderMarkdown(review), "magenta");
+// ===== ⚡ EXECUTOR =====
+async function executePlan(plan, input) {
+  const steps = plan
+    .split("\n")
+    .map(s => s.trim())
+    .filter(s => s && /^\d+/.test(s));
+
+  for (const step of steps) {
+    console.log(`\n⚡ Executing: ${step}`);
+
+    const lower = step.toLowerCase();
+
+    if (lower.includes("scan")) {
+      await scan("src");
+    } 
+    else if (lower.includes("fix")) {
+      await fixFile("src/app.js");
+    } 
+    else if (lower.includes("debug")) {
+      await debug("src/app.js");
+    } 
+    else {
+      // fallback AI execution
+      const res = await ask(`
+Execute this step:
+${step}
+
+Context:
+${input}
+`);
+      console.log(res);
+    }
+  }
 }
 
 // ===== FIX =====
 async function fixFile(file) {
   const code = readFile(file);
-  if (!code) return printBox("Error", "File not found", "red");
+  if (!code) return console.log("❌ File not found:", file);
 
-  const spinner = ora("Fixing file...").start();
+  console.log(`🔧 Fixing ${file}...`);
 
-  const result = await ask(`Fix this code:\n${code}`);
-  spinner.stop();
+  const result = await ask(`
+Fix bugs in this code and return FULL fixed code only:
 
-  printBox("📊 Result", renderMarkdown(result), "green");
+${code}
+`);
+
+  console.log("\n===== RESULT =====\n");
+  console.log(result);
 }
 
 // ===== SCAN =====
 async function scan(folder) {
   const files = await glob(`${folder}/**/*.js`);
-  printBox("Scan", `Scanning ${files.length} files...`, "cyan");
+
+  console.log(`📂 Found ${files.length} files`);
 
   for (const f of files) {
-    await fixFile(f);
-  }
-}
-
-// ===== AUDIT =====
-async function audit(folder = "src") {
-  printBox("Security", "Running audit...", "red");
-
-  try {
-    const out = execSync("npm audit --json", { encoding: "utf-8" });
-    printBox("npm audit", out.slice(0, 1000), "yellow");
-  } catch {
-    printBox("npm audit", "Issues found", "red");
+    console.log("→", f);
   }
 }
 
 // ===== DEBUG =====
 async function debug(file) {
   const code = readFile(file);
-  if (!code) return printBox("Error", "File not found", "red");
+  if (!code) return console.log("❌ File not found");
 
   const res = await ask(`Debug this:\n${code}`);
-  printBox("Debug Result", renderMarkdown(res), "yellow");
+  console.log(res);
 }
 
-// ===== CHAT MODE =====
+// ===== AUDIT =====
+async function audit(folder) {
+  console.log("🛡️ Audit running...");
+
+  const files = await glob(`${folder}/**/*.js`);
+
+  for (const f of files) {
+    const c = readFile(f);
+    if (!c) continue;
+
+    if (c.includes("eval(")) {
+      console.log(`⚠️ eval found in ${f}`);
+    }
+  }
+}
+
+// ===== 💬 CHAT MODE =====
 async function chatMode() {
-  banner();
+  console.log("\n🤖 AI DEV (Planner Mode)\nType 'exit' to quit\n");
 
   while (true) {
-    const input = readlineSync.question(chalk.green("You > "));
+    const input = readlineSync.question("You > ");
 
-    if (input === "exit") {
-      console.log(chalk.red("Bye 👋"));
-      process.exit(0);
-    }
+    if (input === "exit") break;
 
     const intent = await interpret(input);
     const target = extractPath(input);
 
-    if (intent === "fix") return fixFile(target || "src/app.js");
-    if (intent === "scan") return scan(target || "src");
-    if (intent === "audit") return audit(target || "src");
-    if (intent === "debug") return debug(target || "src/app.js");
+    // ===== DIRECT COMMAND =====
+    if (intent === "fix") {
+      await fixFile(target || "src/app.js");
+      continue;
+    }
 
-    await multiAgent(input);
+    if (intent === "scan") {
+      await scan(target || "src");
+      continue;
+    }
+
+    if (intent === "debug") {
+      await debug(target || "src/app.js");
+      continue;
+    }
+
+    if (intent === "audit") {
+      await audit(target || "src");
+      continue;
+    }
+
+    // ===== 🧠 PLANNER FLOW =====
+    console.log("\n🧠 Generating plan...");
+
+    const plan = await makePlan(input);
+
+    console.log("\n📋 PLAN:\n");
+    console.log(plan);
+
+    const confirm = readlineSync.question("\nApply plan? (y/n): ");
+
+    if (confirm === "y") {
+      await executePlan(plan, input);
+    } else {
+      console.log("❌ Cancelled");
+    }
   }
 }
 
@@ -225,14 +224,20 @@ async function chatMode() {
 const input = process.argv.slice(2).join(" ");
 
 (async () => {
-  if (!input) return chatMode();
+  if (!input) {
+    await chatMode();
+    return;
+  }
 
   const intent = await interpret(input);
   const target = extractPath(input);
 
   if (intent === "fix") await fixFile(target || "src/app.js");
   else if (intent === "scan") await scan(target || "src");
-  else if (intent === "audit") await audit(target || "src");
   else if (intent === "debug") await debug(target || "src/app.js");
-  else await multiAgent(input);
+  else if (intent === "audit") await audit(target || "src");
+  else {
+    const plan = await makePlan(input);
+    console.log("\n📋 PLAN:\n", plan);
+  }
 })();
