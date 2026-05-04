@@ -13,12 +13,20 @@
     "scan": "node ai.js scan",
     "debug": "node ai.js debug"
   },
-  "keywords": ["ai", "dev", "automation"],
+  "keywords": [
+    "ai",
+    "dev",
+    "automation"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "boxen": "^8.0.1",
+    "chalk": "^5.6.2",
     "dotenv": "^17.4.2",
     "glob": "^13.0.6",
-    "openai": "^6.35.0"
+    "openai": "^6.35.0",
+    "ora": "^9.4.0",
+    "readline-sync": "^1.4.10"
   }
 }
