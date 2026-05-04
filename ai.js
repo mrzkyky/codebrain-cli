@@ -91,11 +91,39 @@ const writeFile = (f, c) => fs.writeFileSync(f, c, "utf-8");
 async function interpret(input) {
   const t = input.toLowerCase();
 
-  if (t.includes("fix")) return "fix";
-  if (t.includes("scan")) return "scan";
-  if (t.includes("audit") || t.includes("security")) return "audit";
-  if (t.includes("debug") || t.includes("error")) return "debug";
+  // internal commands only
+  if (
+    t.includes("scan project") ||
+    t.includes("scan folder") ||
+    t.startsWith("scan ") ||
+    t.startsWith("ai scan")
+  ) {
+    return "scan";
+  }
 
+  if (
+    t.includes("fix file") ||
+    t.startsWith("fix ") ||
+    t.startsWith("ai fix")
+  ) {
+    return "fix";
+  }
+
+  if (
+    t.includes("audit project") ||
+    t.includes("security audit")
+  ) {
+    return "audit";
+  }
+
+  if (
+    t.includes("debug file") ||
+    t.startsWith("debug ")
+  ) {
+    return "debug";
+  }
+
+  // everything else = normal AI chat
   return "chat";
 }
 
